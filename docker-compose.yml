@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  db:
+    image: mysql:8.0
+    # 認証プラグインを mysql_native_password に設定
+    command: --default-authentication-plugin=mysql_native_password
+    # 意図せず停止した場合でも常に自動で再起動するよう設定
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root_password
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASS}
+      TZ: Asia/Tokyo
+      MYSQL_INITDB_SKIP_TZINFO: 0
+    ports:
+      - "3306:3306"
+    volumes:
+      - db-data:/var/lib/mysql
+    # dbが接続可能かチェックするための設定
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u$$MYSQL_USER", "-p$$MYSQL_PASSWORD"]
+      timeout: 5s
+      retries: 10
+      interval: 3s
+      start_period: 30s
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ./app:/usr/src/app
+      - ./images/uploads:/images/uploads
+    environment:
+      DB_HOST: db
+      DB_USER: ${DB_USER}
+      DB_PASS: ${DB_PASS}
+      DB_NAME: ${DB_NAME}
+      DB_PORT: "3306"
+      IMAGE_DIR: "/images/uploads"
+    # DBが「正常な状態」になるまで待機
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  db-data:
