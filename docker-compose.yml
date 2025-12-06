@@ -32,14 +32,14 @@ services:
       dockerfile: Dockerfile
     volumes:
       - ./app:/usr/src/app
-      - ./images/uploads:/images/uploads
+      - ./images/upload:/images/upload
     environment:
       DB_HOST: db
       DB_USER: ${DB_USER}
       DB_PASS: ${DB_PASS}
       DB_NAME: ${DB_NAME}
       DB_PORT: "3306"
-      IMAGE_DIR: "/images/uploads"
+      IMAGE_DIR: "/images/upload"
     # DBが「正常な状態」になるまで待機
     depends_on:
       db:

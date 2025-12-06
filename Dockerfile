@@ -10,8 +10,8 @@ RUN go mod download
 
 COPY app/ .
 
-# コンパイル実行
-RUN CGO_ENABLED=0 go build -o /usr/local/bin/uploader
+# main.goをコンパイル
+RUN CGO_ENABLED=0 go build -o /usr/local/bin/uploader ./main.go
 
 # コンパイル済みファイルを実行
 CMD ["/usr/local/bin/uploader"]
