@@ -13,12 +13,10 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"uploader/config"
 	"uploader/db"
 	"uploader/models"
 )
-
-// 最大並行処理数を設定（処理を実行可能なコアの上限数）
-const MAX_CONCURRENCY = 4
 
 func main() {
 	// -----------
@@ -27,18 +25,16 @@ func main() {
 	gormDB := db.ConnectDB()
 	defer db.CloseDB(gormDB) // ※CLI処理が終了したらDB接続をクローズ
 
-	log.Println("SUCCESS: DBとの接続が確立されました")
-
-	// ------------------
-	// 画像ファイルの検索
-	// ------------------
-	imageDir := os.Getenv("IMAGE_DIR")
+	// ----------------------------------
+	// アップロード対象の画像ファイルを検索
+	// ----------------------------------
+	imageDir := config.AppConfig.ImageDir
 	if imageDir == "" {
 		// 終了
 		log.Fatal("FATAL: 環境変数 IMAGE_DIR が設定されていません")
 	}
 
-	fmt.Printf("INFO: アップロード画像検索中: %s\n", imageDir)
+	log.Printf("アップロード画像検索中...: %s\n", imageDir)
 
 	dirEntries, err := os.ReadDir(imageDir)
 	if err != nil {
@@ -57,21 +53,22 @@ func main() {
 	}
 
 	totalFiles := len(filesToUpload)
+
 	if totalFiles == 0 {
-		log.Println("INFO: アップする画像ファイルが見つかりませんでした")
+		log.Println("アップする画像ファイルが見つかりませんでした")
 		return
 	}
-
-	log.Printf("%d 件の画像を検出。アップロードを開始します \n", totalFiles)
 
 	// ===========================
 	// 並行処理の制御（Goroutine）
 	// ===========================
-	var wg sync.WaitGroup							// 全ての Goroutine の完了を待つ監督
-	sem := make(chan struct{}, MAX_CONCURRENCY)		// 同時に起動する Goroutine の最大数を制御するセマフォ
-	var completedCount uint64
+	log.Printf("%d 件の画像を検出。アップロードを開始します\n", totalFiles)
 
-	startTime := time.Now()
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, config.AppConfig.MaxWorkers)	// 同時に起動する Goroutine の最大数を制御するセマフォ
+	var completedCount uint64								// ※アップロード件数表示のため
+
+	startTime := time.Now() // ※処理時間計測用
 
 	// 各画像に対してGoroutineを起動
 	for _, file := range filesToUpload {
@@ -81,8 +78,8 @@ func main() {
 		// １画像１タスク
 		wg.Add(1)
 
-		// セマフォにトークンを送信（最大数を超えるとここでブロック）
-		// (※ブロックされたタスクは一時的にメモリで待機。バッファが空き次第自動で再開される)
+		// セマフォにトークンを送信
+		// 上限超過するとタスクをブロックしメモリに一時待機させる。（バッファが空き次第自動で再開）
 		sem <- struct{}{}
 
 		// -----------------
@@ -100,22 +97,22 @@ func main() {
 			}
 			fileSize := fileInfo.Size()
 
-			// ------------------------------------------------------------
-			// MIMEタイプからタイプ／拡張子を識別（例: image/png, text/html）	
-			// ------------------------------------------------------------
+			// --------------------------------------------
+			// MIMEタイプを識別（例: image/jpeg、image/png）	
+			// --------------------------------------------
 			contentType, err := getContentType(path)
 			if err != nil {
-				fmt.Printf("ERROR: %s のMIMEタイプ判定に失敗: %v\n", name, err)
+				log.Printf("ERROR: %s のMIMEタイプ判定に失敗: %v\n", name, err)
 				return
 			}
 			// 画像ファイル以外（不明なバイナリ）はスキップ
 			if !strings.HasPrefix(contentType, "image/") {
-				fmt.Printf("WARN: %s は画像ファイルではありません (%s)。スキップします。\n", name, contentType)
+				log.Printf("WARN: %s は画像ファイルではありません (%s)。スキップします。\n", name, contentType)
 				return
 			}
 
 			// -----------------------
-			// DBへのメタデータ登録
+			// DBへのアップロード
 			// -----------------------
 			err = recordImageData(gormDB, name, fileSize, contentType, path)
 			if err != nil {
@@ -126,26 +123,26 @@ func main() {
 			
 			newCount := atomic.AddUint64(&completedCount, 1)
 
-			log.Printf("SUCCESS: (%d/%d) %s の登録に成功 \n", newCount, totalFiles, name)
+			log.Printf("(%d/%d) %s の登録に成功 \n", newCount, totalFiles, name)
 
 		}(filePath, fileName)
 	}
 
-	// すべてのGoroutineが完了するのを待つ
+	// すべてのGoroutineが完了するまで以降の処理を行わない
 	wg.Wait()
 
 	duration := time.Since(startTime)
 
-	log.Println("INFO: 全てのアップロード処理が完了しました。")
+	log.Println("\n----- 全てのアップロード処理が完了しました -----")
 	log.Printf("総検出ファイル数: %d\n", totalFiles)
 	log.Printf("成功登録数: %d\n", completedCount)
 	log.Printf("かかった時間: %s\n", duration)
 	log.Printf("平均処理速度: %.2f files/sec\n", float64(completedCount)/duration.Seconds())
 }
 
-// =========================
-// 1つの画像をDBに登録する
-// =========================
+// ==============================
+//　画像をDBに登録する（一件ずつ）
+// ==============================
 func recordImageData(db *gorm.DB, fileName string, size int64, contentType string, filePath string) error {
 	image := models.Image{
 		FileName:    fileName,
@@ -165,9 +162,9 @@ func recordImageData(db *gorm.DB, fileName string, size int64, contentType strin
 	return nil
 }
 
-// =====================================
-// 簡易的な拡張子からMIMEタイプを返す関数
-// =====================================
+// ===========================================================
+// 画像のヘッダー情報をもとにデータ形式を識別（拡張子偽造を防ぐ）
+// ===========================================================
 func getContentType(filePath string) (string, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -175,21 +172,18 @@ func getContentType(filePath string) (string, error) {
 	}
 	defer file.Close()
 
-	// ファイルヘッダーの最初の512バイトを読み込む
-	// net/http.DetectContentType はこの512バイトのマジックナンバーに基づいて判定する
 	buffer := make([]byte, 512)
-	// io.ReadFullを使うことで、ファイルが512バイト未満でもエラーなく読み込める（短い場合はファイル終端まで読み込む）
+	// 画像ファイルの先頭512バイトを読み込む
 	_, err = io.ReadFull(file, buffer)
-	// EOFエラーは気にせず続行（ファイルが512バイト未満でも処理を続けたい）
+	// ファイルが512バイト未満でも処理を続ける
 	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
 		return "", fmt.Errorf("ファイル読み込みエラー: %w", err)
 	}
 
-	// MIMEタイプを判定
+	// MIMEタイプを識別
 	contentType := http.DetectContentType(buffer)
 	
-	// 例外: DetectContentTypeはテキストファイルを text/plain; charset=utf-8 のように返すため、
-	// DBに記録するためにセミコロン以降を除去する
+	// DetectContentTypeは text/plain; charset=utf-8 のように返すため、セミコロン以降を除去
 	contentType = strings.Split(contentType, ";")[0]
 
 	return contentType, nil

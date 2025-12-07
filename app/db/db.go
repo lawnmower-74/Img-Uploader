@@ -9,14 +9,16 @@ import (
 	"gorm.io/gorm"
 )
 
-// DBインスタンスを返す
+// ============================================
+// DBへの接続（成功した場合、DBインスタンスを返す）
+// ============================================
 func ConnectDB() *gorm.DB {
 	user := os.Getenv("DB_USER")
 	pass := os.Getenv("DB_PASS")
 	host := os.Getenv("DB_HOST")
 	port := os.Getenv("DB_PORT")
 	dbname := os.Getenv("DB_NAME")
-
+	
 	if user == "" || pass == "" || host == "" || port == "" || dbname == "" {
 		// 終了
 		log.Fatalln("FATAL: DB接続に必要な環境変数が設定されていません")
@@ -36,11 +38,13 @@ func ConnectDB() *gorm.DB {
 		log.Fatalf("FATAL: DB接続失敗 (DSN: %s の試行中にエラー): %v\n", dsn, err)
 	}
 
-	fmt.Println("INFO: DB接続成功")
+	log.Println("DB接続成功")
 	return db
 }
 
+// ======================
 // DB接続のクローズ
+// ======================
 func CloseDB(db *gorm.DB) {
 	sqlDB, err := db.DB()
 	if err != nil {
@@ -51,5 +55,5 @@ func CloseDB(db *gorm.DB) {
 	if err := sqlDB.Close(); err != nil {
 		log.Printf("ERROR: DB接続切断失敗: %v\n", err)
 	}
-	fmt.Println("INFO: DB接続を切断しました")
+	log.Println("DB接続を正常に切断しました")
 }

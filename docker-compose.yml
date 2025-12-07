@@ -9,16 +9,17 @@ services:
     restart: always
     environment:
       MYSQL_ROOT_PASSWORD: root_password
-      MYSQL_DATABASE: ${DB_NAME}
-      MYSQL_USER: ${DB_USER}
-      MYSQL_PASSWORD: ${DB_PASS}
+      MYSQL_DATABASE: image_uploader_db
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
       TZ: Asia/Tokyo
       MYSQL_INITDB_SKIP_TZINFO: 0
     ports:
       - "3306:3306"
     volumes:
+      # コンテナのライフサイクルに依存しないデータの永続化
       - db-data:/var/lib/mysql
-    # dbが接続可能かチェックするための設定
+    # DBが接続可能かチェックするための設定
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u$$MYSQL_USER", "-p$$MYSQL_PASSWORD"]
       timeout: 5s
@@ -35,12 +36,12 @@ services:
       - ./images/upload:/images/upload
     environment:
       DB_HOST: db
-      DB_USER: ${DB_USER}
-      DB_PASS: ${DB_PASS}
-      DB_NAME: ${DB_NAME}
+      DB_USER: user
+      DB_PASS: password
+      DB_NAME: image_uploader_db
       DB_PORT: "3306"
-      IMAGE_DIR: "/images/upload"
-    # DBが「正常な状態」になるまで待機
+      TZ: Asia/Tokyo
+    # DBが正常な状態になるまで待機
     depends_on:
       db:
         condition: service_healthy

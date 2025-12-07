@@ -7,7 +7,9 @@ import (
 	"uploader/models"
 )
 
+// ================================================
 // AllModels に定義された全モデルのマイグレーション
+// ================================================
 func RunAllMigrations(db *gorm.DB) error {
 	log.Println("マイグレーションを開始...")
 	
@@ -17,11 +19,13 @@ func RunAllMigrations(db *gorm.DB) error {
 		return err
 	}
 	
-	log.Println("SUCCESS: マイグレーション完了")
+	log.Println("マイグレーション完了")
 	return nil
 }
 
+// ================================================
+// テーブルを追加する場合、ここにモデルを追加する
+// ================================================
 var AllModels = []interface{}{
-	// テーブルを追加する場合、ここにモデルを追加する
 	&models.Image{},
 }
