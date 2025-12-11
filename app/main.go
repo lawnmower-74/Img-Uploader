@@ -17,5 +17,6 @@ func main() {
 	log.Println("DBの初期設定が完了しました")
 
 	// アップロード処理
-	uploader.Run(mongoClient)
+	imagesCollection := db.GetDBCollection("images")
+	uploader.Run(imagesCollection)
 }

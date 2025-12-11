@@ -13,6 +13,28 @@ import (
 
 var mongoClientInstance *mongo.Client
 
+var user 	string
+var pass 	string
+var host 	string
+var port 	string
+var dbName 	string
+
+// ====================
+// DB接続情報のセット
+// ====================
+func init()  {
+	user 	= os.Getenv("MONGO_USER")
+	pass 	= os.Getenv("MONGO_PASSWORD")
+	host 	= os.Getenv("MONGO_HOST")
+	port 	= os.Getenv("MONGO_PORT")
+	dbName 	= os.Getenv("MONGO_DB")
+
+	if user == "" || pass == "" || host == "" || port == "" || dbName == "" {
+		// 終了
+		log.Fatalln("FATAL: DB接続に必要な環境変数が設定されていません")
+	}
+}
+
 // ============================================
 // DBへの接続（成功した場合、DBインスタンスを返す）
 // ============================================
@@ -22,22 +44,8 @@ func ConnectDB() *mongo.Client {
 		return mongoClientInstance
 	}
 
-	// -------------------
-	// DB接続情報のセット
-	// -------------------
-	user := os.Getenv("MONGO_USER")
-	pass := os.Getenv("MONGO_PASSWORD")
-	host := os.Getenv("MONGO_HOST")
-	port := os.Getenv("MONGO_PORT")
-	dbName := os.Getenv("MONGO_DB")
-
-	if user == "" || pass == "" || host == "" || port == "" || dbName == "" {
-		// 終了
-		log.Fatalln("FATAL: DB接続に必要な環境変数が設定されていません")
-	}
-	
 	mongoURI := fmt.Sprintf(
-		"mongodb://%s:%s@%s:%s/%s?authSource=admin",
+		"mongodb://%s:%s@%s:%s/%s?authSource=admin&authMechanism=SCRAM-SHA-256",
 		user, 
 		pass, 
 		host, 
@@ -96,6 +104,15 @@ func ConnectDB() *mongo.Client {
 
 	// 終了
 	log.Fatalf("FATAL: DBへの接続に最大試行回数 (%d回) 失敗しました: %v", maxRetries, err)
+
+	return nil
+}
+
+// ========================
+// 特定のコレクションを返す
+// ========================
+func GetDBCollection(collectionName string) *mongo.Collection {
+    return mongoClientInstance.Database(dbName).Collection(collectionName)
 }
 
 // ======================

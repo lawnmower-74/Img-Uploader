@@ -1,6 +1,7 @@
-package main
+package uploader
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -12,19 +13,15 @@ import (
 	"sync/atomic"
 	"time"
 
-	"gorm.io/gorm"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
+
 	"uploader/config"
-	"uploader/db"
 	"uploader/models"
 )
 
-func main() {
-	// -----------
-	// DB接続設定
-	// -----------
-	gormDB := db.ConnectDB()
-	defer db.CloseDB(gormDB) // ※CLI処理が終了したらDB接続をクローズ
-
+func Run(imagesCollection *mongo.Collection) {
 	// ----------------------------------
 	// アップロード対象の画像ファイルを検索
 	// ----------------------------------
@@ -114,7 +111,7 @@ func main() {
 			// -----------------------
 			// DBへのアップロード
 			// -----------------------
-			err = recordImageData(gormDB, name, fileSize, contentType, path)
+			err = saveImageData(imagesCollection, name, fileSize, contentType, path)
 			if err != nil {
 				// DB登録エラー（※ユニーク制約違反含む）
 				log.Printf("ERROR: %s のDB登録に失敗: %v\n", name, err)
@@ -143,7 +140,7 @@ func main() {
 // ==============================
 //　画像をDBに登録する（一件ずつ）
 // ==============================
-func recordImageData(db *gorm.DB, fileName string, size int64, contentType string, filePath string) error {
+func saveImageData(collection *mongo.Collection, fileName string, size int64, contentType string, filePath string) error {
 	image := models.Image{
 		FileName:    fileName,
 		Size:        size,
@@ -151,14 +148,38 @@ func recordImageData(db *gorm.DB, fileName string, size int64, contentType strin
 		FilePath:    filePath,
 	}
 
-	result := db.Create(&image)
-	if result.Error != nil {
-		// ユニーク制約違反のエラー処理
-		if strings.Contains(result.Error.Error(), "Duplicate entry") {
-			return fmt.Errorf("指定されたファイル名 '%s' は既に存在します", fileName)
-		}
-		return result.Error
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// -------------------------------------
+	// ※ユニーク制限のかかったフィールド
+	// -------------------------------------
+	filter := bson.M{
+		"filename": fileName,
 	}
+
+	update := bson.M{
+		"$set": bson.M{
+			"size": 		image.Size,
+			"contenttype": 	image.ContentType,
+			"filepath": 	image.FilePath,
+			"updatedat": 	time.Now(),
+		},
+		"$setOnInsert": bson.M{
+			// 新規挿入時のみCreatedAtを設定
+			"createdat": 	time.Now(),
+		},
+	}
+
+	// ※Upsert (ドキュメントが存在しなければ新規作成) を有効にする
+	opts := options.Update().SetUpsert(true)
+
+	// 更新／作成
+	_, err := collection.UpdateOne(ctx, filter, update, opts)
+	if err != nil {
+		return err
+	}
+	
 	return nil
 }
 
