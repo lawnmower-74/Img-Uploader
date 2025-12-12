@@ -34,8 +34,9 @@
 
 # 実行結果
 
-アップロード件数：1398 件  
-※MySQLは `mysql-legacy` ブランチに適用中
+- アップロード件数：1398 件  
+- 稼働スレッド数：16  
+- ※MySQLは `mysql-legacy` ブランチに適用中
 
 <div align="center">
 
