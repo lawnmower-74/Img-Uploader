@@ -2,49 +2,42 @@ version: '3.8'
 
 services:
   db:
-    image: mysql:8.0
-    # 認証プラグインを mysql_native_password に設定
-    command: --default-authentication-plugin=mysql_native_password
+    image: mongo:latest
     # 意図せず停止した場合でも常に自動で再起動するよう設定
     restart: always
     environment:
-      MYSQL_ROOT_PASSWORD: root_password
-      MYSQL_DATABASE: image_uploader_db
-      MYSQL_USER: user
-      MYSQL_PASSWORD: password
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+      MONGO_INITDB_DATABASE: image_uploader_db
       TZ: Asia/Tokyo
-      MYSQL_INITDB_SKIP_TZINFO: 0
     ports:
-      - "3306:3306"
+      - "27017:27017"
     volumes:
       # コンテナのライフサイクルに依存しないデータの永続化
-      - db-data:/var/lib/mysql
-    # DBが接続可能かチェックするための設定
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u$$MYSQL_USER", "-p$$MYSQL_PASSWORD"]
-      timeout: 5s
-      retries: 10
-      interval: 3s
-      start_period: 30s
+      - mongo_data:/data/db
+      # DBの一般ユーザー（アプリ・GUIなどで使用）を作成させる
+      - ./docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
 
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    build: .
     volumes:
       - ./app:/usr/src/app
       - ./images/upload:/images/upload
     environment:
-      DB_HOST: db
-      DB_USER: user
-      DB_PASS: password
-      DB_NAME: image_uploader_db
-      DB_PORT: "3306"
+      MONGO_USER: ${MONGO_USER}
+      MONGO_PASSWORD: ${MONGO_PASSWORD}
+      MONGO_HOST: db
+      MONGO_PORT: "27017"
+      MONGO_DB: image_uploader_db
       TZ: Asia/Tokyo
-    # DBが正常な状態になるまで待機
+    # MongoDBの起動を待ってからアプリを起動
     depends_on:
-      db:
-        condition: service_healthy
+      - db
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
 
 volumes:
-  db-data:
+  mongo_data:

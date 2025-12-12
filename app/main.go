@@ -4,19 +4,19 @@ import (
 	"log"
 	
 	"uploader/db"
-	"uploader/migrate"
+	"uploader/uploader"
 )
 
-// DB起動・マイグレートの実行
 func main() {
-	gormDB := db.ConnectDB()
-	defer db.CloseDB(gormDB)
+	// DBインスタンス生成・インデックス設定
+	mongoClient := db.ConnectDB()
 	
-	err := migrate.RunAllMigrations(gormDB)
-	if err != nil {
-		// 終了
-		log.Fatalln("FATAL: マイグレーションに失敗したので処理を終了します")
-	}
+	// CLI処理が終了したらDB接続をクローズ
+	defer db.CloseDB(mongoClient)
 
-	log.Println("アプリケーションの初期設定（DB接続・マイグレーション）が正常に完了しました")
+	log.Println("DBの初期設定が完了しました")
+
+	// アップロード処理
+	imagesCollection := db.GetDBCollection("images")
+	uploader.Run(imagesCollection)
 }
