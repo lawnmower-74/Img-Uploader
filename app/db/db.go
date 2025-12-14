@@ -108,6 +108,36 @@ func ConnectDB() *mongo.Client {
 	return nil
 }
 
+// =============================================================================================
+// コレクションに必要なインデックスが設定されていることを確認（※アプリケーション起動時に一度だけ実行）
+// =============================================================================================
+func ensureIndexes(client *mongo.Client, dbName string) {
+	log.Println("必要なDBインデックスの確認を開始します...")
+
+	db := client.Database(dbName)
+
+	// index_setup.go で定義されたインデックスを参照して処理
+	for colName, models := range CollectionIndexModels {
+		if len(models) == 0 {
+			continue // インデックス定義がない場合はスキップ
+		}
+		
+		indexView := db.Collection(colName).Indexes()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		// インデックスを一括作成（既に存在する場合はスキップ） 
+		names, err := indexView.CreateMany(ctx, models)
+		if err != nil {
+			// 終了
+			log.Fatalf("FATAL: コレクション '%s' のインデックス作成に失敗しました: %v", colName, err)
+		}
+		
+		log.Printf("コレクション '%s' にインデックスが作成されました: %v", colName, names)
+	}
+}
+
 // ========================
 // 特定のコレクションを返す
 // ========================
