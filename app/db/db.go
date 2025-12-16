@@ -59,10 +59,12 @@ func ConnectDB() *mongo.Client {
 	// -------------------------------------------------------
 	var client *mongo.Client
 	var err error
-	maxRetries := 5 				// 最大試行回数
-	retryDelay := 5 * time.Second 	// 待機時間
+	maxRetries := 5 						// 最大試行回数
+	initialRetryDelay := 1 * time.Second 	// 初期待機時間
+	retryDelay := initialRetryDelay      	// 待機時間
 
 	log.Println("DB接続試行中...")
+	log.Printf("mongoURI: mongodb://%s:*****@%s:%s/%s?authSource=admin&authMechanism=SCRAM-SHA-256", user, host, port, dbName)
 	
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -83,7 +85,7 @@ func ConnectDB() *mongo.Client {
 			// ========================================
 			// コレクションに付与するインデックスを作成
 			// ========================================
-			ensureIndexes(client, dbName)
+			EnsureIndexes(client, dbName)
 
 			// 返り値はココ（※グローバル変数に代入）
 			mongoClientInstance = client
@@ -92,7 +94,13 @@ func ConnectDB() *mongo.Client {
 
 		// Pingが失敗した場合のリトライ処理
 		log.Printf("WARN: DB接続失敗 (試行 %d/%d): Ping失敗: %v. %v後にリトライします...", i+1, maxRetries, err, retryDelay)
-
+		// 指数バックオフ
+		if i < maxRetries-1 {
+			retryDelay *= 2
+			if retryDelay > 30*time.Second { // 最大遅延時間を設定（※過度に待機するのを防ぐため）
+				retryDelay = 30*time.Second
+			}
+		}
 		if err := client.Disconnect(context.Background()); err != nil {
             log.Printf("ERROR: Ping失敗後のDBクライアント切断に失敗しました: %v", err)
         }
@@ -111,7 +119,7 @@ func ConnectDB() *mongo.Client {
 // =============================================================================================
 // コレクションに必要なインデックスが設定されていることを確認（※アプリケーション起動時に一度だけ実行）
 // =============================================================================================
-func ensureIndexes(client *mongo.Client, dbName string) {
+func EnsureIndexes(client *mongo.Client, dbName string) {
 	log.Println("必要なDBインデックスの確認を開始します...")
 
 	db := client.Database(dbName)
